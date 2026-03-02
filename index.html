@@ -46,6 +46,33 @@
 
             const CORS_PROXY = 'https://corsproxy.io/?';
 
+            // 方便計算「目前區間對應的標題」
+            const getClampedRange = () => {
+                if (links.length === 0) return null;
+                const total = links.length;
+                let start = parseInt(startIndex, 10);
+                let end = parseInt(endIndex, 10);
+
+                if (isNaN(start)) start = 1;
+                if (isNaN(end)) end = total;
+
+                start = Math.max(1, Math.min(start, total));
+                end = Math.max(1, Math.min(end, total));
+                if (start > end) [start, end] = [end, start];
+
+                return { start, end, total };
+            };
+
+            const rangeInfo = getClampedRange();
+            const startLinkTitle =
+                rangeInfo && rangeInfo.start >= 1 && rangeInfo.start <= links.length
+                    ? links[rangeInfo.start - 1].title
+                    : '';
+            const endLinkTitle =
+                rangeInfo && rangeInfo.end >= 1 && rangeInfo.end <= links.length
+                    ? links[rangeInfo.end - 1].title
+                    : '';
+
             // 1. 抓目錄頁裡的所有文章連結
             const fetchLinks = async () => {
                 setIsProcessing(true);
@@ -397,42 +424,62 @@
                             </div>
 
                             {/* 區間選擇 */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        提取起始編號（從第幾個）
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={startIndex}
-                                        onChange={(e) => setStartIndex(e.target.value)}
-                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                                        disabled={isProcessing || links.length === 0}
-                                        placeholder="例如：111"
-                                    />
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            提取起始編號（從第幾個）
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={startIndex}
+                                            onChange={(e) => setStartIndex(e.target.value)}
+                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                            disabled={isProcessing || links.length === 0}
+                                            placeholder="例如：11"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            提取結束編號（到第幾個）
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={endIndex}
+                                            onChange={(e) => setEndIndex(e.target.value)}
+                                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                            disabled={isProcessing || links.length === 0}
+                                            placeholder="例如：301"
+                                        />
+                                    </div>
+                                    <div className="text-sm text-gray-500 md:text-right">
+                                        {links.length > 0 ? (
+                                            <p>目前共找到 {links.length} 個連結，可輸入 1 ～ {links.length} 的任意區間。</p>
+                                        ) : (
+                                            <p>先按「獲取頁面連結」，才能設定區間。</p>
+                                        )}
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        提取結束編號（到第幾個）
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={endIndex}
-                                        onChange={(e) => setEndIndex(e.target.value)}
-                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                                        disabled={isProcessing || links.length === 0}
-                                        placeholder="例如：257"
-                                    />
-                                </div>
-                                <div className="text-sm text-gray-500 md:text-right">
-                                    {links.length > 0 ? (
-                                        <p>目前共找到 {links.length} 個連結，可輸入 1 ～ {links.length} 的任意區間。</p>
-                                    ) : (
-                                        <p>先按「獲取頁面連結」，才能設定區間。</p>
-                                    )}
-                                </div>
+
+                                {/* 顯示區間兩端標題 */}
+                                {links.length > 0 && rangeInfo && (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-700 space-y-1">
+                                        <p>
+                                            起始第 {rangeInfo.start} 個標題：
+                                            <span className="font-medium">
+                                                {startLinkTitle || '（超出範圍，沒有對應連結）'}
+                                            </span>
+                                        </p>
+                                        <p>
+                                            結束第 {rangeInfo.end} 個標題：
+                                            <span className="font-medium">
+                                                {endLinkTitle || '（超出範圍，沒有對應連結）'}
+                                            </span>
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex flex-wrap gap-3">
