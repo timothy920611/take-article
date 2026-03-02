@@ -140,6 +140,10 @@
                                 doc.querySelector('.bodyTxt');
                             
                             if (articleNode) {
+                                // (0) 先砍掉 PhotoSwipe 這種整個外掛 DOM
+                                const pswpNodes = articleNode.querySelectorAll('.pswp');
+                                pswpNodes.forEach(n => n.remove());
+
                                 // (1) 移除不需要的元素
                                 const hiddenElements = articleNode.querySelectorAll(`
                                     .hidden, noscript, script, style, nav, footer, 
