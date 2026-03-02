@@ -40,6 +40,10 @@
             const [isProcessing, setIsProcessing] = useState(false);
             const [progress, setProgress] = useState(0);
 
+            // 新增：選擇區間（1-based）
+            const [startIndex, setStartIndex] = useState('');
+            const [endIndex, setEndIndex] = useState('');
+
             const CORS_PROXY = 'https://corsproxy.io/?';
 
             const fetchLinks = async () => {
@@ -65,13 +69,18 @@
                         if (href && href.includes('/wol/d/r24/lp-ch/')) {
                             const fullUrl = href.startsWith('http') ? href : `https://wol.jw.org${href}`;
                             if (!extractedLinks.some(link => link.url === fullUrl)) {
-                                extractedLinks.push({ title: a.textContent.trim(), url: fullUrl });
+                                extractedLinks.push({ title: a.textContent.trim() || fullUrl, url: fullUrl });
                             }
                         }
                     });
 
                     setLinks(extractedLinks);
-                    setStatus(`成功找到 ${extractedLinks.length} 個文章連結！請點擊「開始提取內容」。`);
+                    // 預設區間填滿 1 ~ N
+                    if (extractedLinks.length > 0) {
+                        setStartIndex('1');
+                        setEndIndex(String(extractedLinks.length));
+                    }
+                    setStatus(`成功找到 ${extractedLinks.length} 個文章連結！請設定想提取的區間，然後點擊「開始提取內容」。`);
                 } catch (error) {
                     setStatus(`錯誤: ${error.message}`);
                 } finally {
@@ -80,15 +89,44 @@
             };
 
             const extractTextFromLinks = async () => {
+                if (links.length === 0) return;
+
+                // 先把輸入轉成數字，並做邊界處理（1-based -> 0-based）
+                const total = links.length;
+                let start = parseInt(startIndex, 10);
+                let end = parseInt(endIndex, 10);
+
+                if (isNaN(start)) start = 1;
+                if (isNaN(end)) end = total;
+
+                // clamp 在合法區間
+                start = Math.max(1, Math.min(start, total));
+                end = Math.max(1, Math.min(end, total));
+
+                if (start > end) {
+                    // 如果使用者反過來輸入，就交換
+                    [start, end] = [end, start];
+                }
+
+                // 對外顯示用的資訊
+                const targetCount = end - start + 1;
+                const baseMessage = `將提取第 ${start} 到第 ${end} 個連結，共 ${targetCount} 個。`;
+
                 setIsProcessing(true);
-                setStatus('開始逐頁提取內容 (為了避免被封鎖，每頁將會稍微暫停)...');
+                setStatus(baseMessage + ' 開始逐頁提取內容 (為了避免被封鎖，每頁將會稍微暫停)...');
+                setResults([]);
+                setProgress(0);
                 
                 const extractedData = [];
-                
-                for (let i = 0; i < links.length; i++) {
-                    const link = links[i];
-                    setStatus(`正在提取 (${i + 1}/${links.length}): ${link.title}`);
-                    setProgress(Math.round(((i + 1) / links.length) * 100));
+                // 0-based index 範圍
+                const targetLinks = links.slice(start - 1, end);
+
+                for (let i = 0; i < targetLinks.length; i++) {
+                    const link = targetLinks[i];
+                    const currentNumber = start + i; // 真正的「第幾個」
+
+                    setStatus(`正在提取 (${currentNumber}/${links.length}，區間內第 ${i + 1}/${targetLinks.length}): ${link.title}`);
+                    setProgress(Math.round(((i + 1) / targetLinks.length) * 100));
 
                     try {
                         const response = await fetch(CORS_PROXY + encodeURIComponent(link.url));
@@ -100,7 +138,6 @@
                             const articleNode = doc.querySelector('article') || doc.querySelector('#article') || doc.querySelector('.bodyTxt');
                             
                             if (articleNode) {
-                                // 【升級清理機制】：新增過濾更多無用元素，防止出現五個點或方塊
                                 const hiddenElements = articleNode.querySelectorAll(`
                                     .hidden, noscript, script, style, nav, footer, 
                                     .docSubNav, .share-wrapper, .share-buttons, 
@@ -109,7 +146,6 @@
                                 `);
                                 hiddenElements.forEach(el => el.remove());
 
-                                // 移除沒有文字也沒有圖片的空連結和空標籤
                                 const emptyElements = articleNode.querySelectorAll('a, span');
                                 emptyElements.forEach(el => {
                                     if (!el.textContent.trim() && !el.querySelector('img')) {
@@ -117,7 +153,6 @@
                                     }
                                 });
 
-                                // ✅ 圖片 src：相對路徑 → 絕對網址
                                 const images = articleNode.querySelectorAll('img');
                                 images.forEach(img => {
                                     const src = img.getAttribute('src');
@@ -126,23 +161,17 @@
                                     }
                                 });
 
-                                // ✅ 連結 href（包含經文連結）：相對路徑 → 絕對網址
                                 const anchors = articleNode.querySelectorAll('a');
                                 anchors.forEach(a => {
                                     const href = a.getAttribute('href');
                                     if (!href) return;
 
-                                    // 已經是 http / https 就不要動
                                     if (href.startsWith('http://') || href.startsWith('https://')) return;
-
-                                    // 頁內錨點 (#xxx) 通常是同頁內跳轉，如果你希望保留就直接 return
                                     if (href.startsWith('#')) return;
 
-                                    // 以 / 開頭：網站內部絕對路徑 → 加上 domain
                                     if (href.startsWith('/')) {
                                         a.setAttribute('href', `https://wol.jw.org${href}`);
                                     } else {
-                                        // 其他相對路徑：盡量補成 https://wol.jw.org/xxxx
                                         a.setAttribute('href', `https://wol.jw.org/${href}`);
                                     }
                                 });
@@ -176,7 +205,7 @@
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 }
 
-                setStatus('提取完成！您可以選擇下載 TXT 或 HTML 格式。');
+                setStatus(`提取完成！本次共處理第 ${start} 到第 ${end} 個連結（${targetLinks.length} 筆）。您可以選擇下載 TXT 或 HTML 格式。`);
                 setIsProcessing(false);
             };
 
@@ -305,7 +334,7 @@
                         <div className="p-6 bg-blue-600 text-white flex justify-between items-center">
                             <div>
                                 <h1 className="text-2xl font-bold">網頁內容提取工具 (WOL Scraper)</h1>
-                                <p className="mt-2 text-blue-100">支援提取純文字與完整 HTML 排版格式。</p>
+                                <p className="mt-2 text-blue-100">支援提取純文字與完整 HTML 排版格式，現在也可以選擇區間。</p>
                             </div>
                         </div>
                         
@@ -334,6 +363,45 @@
                                 </div>
                             </div>
 
+                            {/* 區間選擇區塊 */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        提取起始編號（從第幾個）
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={startIndex}
+                                        onChange={(e) => setStartIndex(e.target.value)}
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                        disabled={isProcessing || links.length === 0}
+                                        placeholder="例如：111"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        提取結束編號（到第幾個）
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={endIndex}
+                                        onChange={(e) => setEndIndex(e.target.value)}
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                        disabled={isProcessing || links.length === 0}
+                                        placeholder="例如：257"
+                                    />
+                                </div>
+                                <div className="text-sm text-gray-500 md:text-right">
+                                    {links.length > 0 ? (
+                                        <p>目前共找到 {links.length} 個連結，可輸入 1 ～ {links.length} 的任意區間。</p>
+                                    ) : (
+                                        <p>先按「獲取頁面連結」，才能設定區間。</p>
+                                    )}
+                                </div>
+                            </div>
+
                             <div className="flex flex-wrap gap-3">
                                 <button 
                                     onClick={fetchLinks} 
@@ -347,7 +415,7 @@
                                     disabled={isProcessing || links.length === 0}
                                     className={`px-5 py-2.5 rounded-lg font-medium text-white shadow-sm transition ${isProcessing || links.length === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800'}`}
                                 >
-                                    2. 開始提取內容
+                                    2. 開始提取內容（依照上方區間）
                                 </button>
                                 
                                 <div className="flex-grow"></div>
@@ -372,7 +440,7 @@
                             <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
                                 <h3 className="font-semibold text-blue-900 mb-2">系統狀態:</h3>
                                 <p className="text-sm text-blue-800">{status}</p>
-                                {isProcessing && links.length > 0 && (
+                                {isProcessing && (
                                     <div className="mt-3 w-full bg-blue-200 rounded-full h-2">
                                         <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
                                     </div>
@@ -381,12 +449,16 @@
 
                             {results.length > 0 && (
                                 <div className="mt-8 border-t border-gray-200 pt-6">
-                                    <h3 className="font-semibold text-xl mb-4 text-gray-800">提取預覽 ({results.length}/{links.length})</h3>
+                                    <h3 className="font-semibold text-xl mb-4 text-gray-800">
+                                        提取預覽 ({results.length} / {links.length})
+                                    </h3>
                                     <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                                         {results.map((item, idx) => (
                                             <div key={idx} className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm hover:shadow-md transition">
                                                 <h4 className="font-bold text-lg text-blue-800 mb-1">{item.title}</h4>
-                                                <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-gray-500 hover:text-blue-600 hover:underline break-all mb-3 block">{item.url}</a>
+                                                <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-gray-500 hover:text-blue-600 hover:underline break-all mb-3 block">
+                                                    {item.url}
+                                                </a>
                                                 <p className="text-sm text-gray-600 line-clamp-3 leading-relaxed">{item.content}</p>
                                             </div>
                                         ))}
