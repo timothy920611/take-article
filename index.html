@@ -27,7 +27,7 @@
     <!-- React 應用程式的掛載點 -->
     <div id="root"></div>
 
-    <!-- React 的程式碼 -->
+    <!-- React 程式碼 -->
     <script type="text/babel">
         const { useState } = React;
 
@@ -40,12 +40,13 @@
             const [isProcessing, setIsProcessing] = useState(false);
             const [progress, setProgress] = useState(0);
 
-            // 新增：選擇區間（1-based）
+            // 區間選擇（1-based）
             const [startIndex, setStartIndex] = useState('');
             const [endIndex, setEndIndex] = useState('');
 
             const CORS_PROXY = 'https://corsproxy.io/?';
 
+            // 1. 抓目錄頁裡的所有文章連結
             const fetchLinks = async () => {
                 setIsProcessing(true);
                 setStatus('正在獲取主頁面連結...');
@@ -75,11 +76,12 @@
                     });
 
                     setLinks(extractedLinks);
-                    // 預設區間填滿 1 ~ N
+
                     if (extractedLinks.length > 0) {
                         setStartIndex('1');
                         setEndIndex(String(extractedLinks.length));
                     }
+
                     setStatus(`成功找到 ${extractedLinks.length} 個文章連結！請設定想提取的區間，然後點擊「開始提取內容」。`);
                 } catch (error) {
                     setStatus(`錯誤: ${error.message}`);
@@ -88,10 +90,10 @@
                 }
             };
 
+            // 2. 依照區間逐頁提取內容
             const extractTextFromLinks = async () => {
                 if (links.length === 0) return;
 
-                // 先把輸入轉成數字，並做邊界處理（1-based -> 0-based）
                 const total = links.length;
                 let start = parseInt(startIndex, 10);
                 let end = parseInt(endIndex, 10);
@@ -99,16 +101,14 @@
                 if (isNaN(start)) start = 1;
                 if (isNaN(end)) end = total;
 
-                // clamp 在合法區間
+                // clamp 到合法範圍
                 start = Math.max(1, Math.min(start, total));
                 end = Math.max(1, Math.min(end, total));
 
                 if (start > end) {
-                    // 如果使用者反過來輸入，就交換
                     [start, end] = [end, start];
                 }
 
-                // 對外顯示用的資訊
                 const targetCount = end - start + 1;
                 const baseMessage = `將提取第 ${start} 到第 ${end} 個連結，共 ${targetCount} 個。`;
 
@@ -118,12 +118,11 @@
                 setProgress(0);
                 
                 const extractedData = [];
-                // 0-based index 範圍
-                const targetLinks = links.slice(start - 1, end);
+                const targetLinks = links.slice(start - 1, end); // 0-based
 
                 for (let i = 0; i < targetLinks.length; i++) {
                     const link = targetLinks[i];
-                    const currentNumber = start + i; // 真正的「第幾個」
+                    const currentNumber = start + i;
 
                     setStatus(`正在提取 (${currentNumber}/${links.length}，區間內第 ${i + 1}/${targetLinks.length}): ${link.title}`);
                     setProgress(Math.round(((i + 1) / targetLinks.length) * 100));
@@ -135,9 +134,13 @@
                             const parser = new DOMParser();
                             const doc = parser.parseFromString(htmlText, 'text/html');
                             
-                            const articleNode = doc.querySelector('article') || doc.querySelector('#article') || doc.querySelector('.bodyTxt');
+                            const articleNode =
+                                doc.querySelector('article') ||
+                                doc.querySelector('#article') ||
+                                doc.querySelector('.bodyTxt');
                             
                             if (articleNode) {
+                                // (1) 移除不需要的元素
                                 const hiddenElements = articleNode.querySelectorAll(`
                                     .hidden, noscript, script, style, nav, footer, 
                                     .docSubNav, .share-wrapper, .share-buttons, 
@@ -146,13 +149,24 @@
                                 `);
                                 hiddenElements.forEach(el => el.remove());
 
-                                const emptyElements = articleNode.querySelectorAll('a, span');
+                                // (2) 刪掉實際上沒內容、只會顯示成小方框的裝飾元素
+                                const emptyElements = articleNode.querySelectorAll('a, span, i, em, strong');
                                 emptyElements.forEach(el => {
-                                    if (!el.textContent.trim() && !el.querySelector('img')) {
+                                    if (el.querySelector('img')) return; // 有圖片就保留
+
+                                    let text = el.textContent || '';
+
+                                    // 移除常見不可見字元
+                                    text = text
+                                      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+                                      .replace(/\s+/g, '');
+
+                                    if (text.length === 0) {
                                         el.remove();
                                     }
                                 });
 
+                                // (3) 圖片 src：相對 → 絕對
                                 const images = articleNode.querySelectorAll('img');
                                 images.forEach(img => {
                                     const src = img.getAttribute('src');
@@ -161,13 +175,13 @@
                                     }
                                 });
 
+                                // (4) 連結 href（含經文）：相對 → 絕對
                                 const anchors = articleNode.querySelectorAll('a');
                                 anchors.forEach(a => {
                                     const href = a.getAttribute('href');
                                     if (!href) return;
-
                                     if (href.startsWith('http://') || href.startsWith('https://')) return;
-                                    if (href.startsWith('#')) return;
+                                    if (href.startsWith('#')) return; // 頁內錨點保留
 
                                     if (href.startsWith('/')) {
                                         a.setAttribute('href', `https://wol.jw.org${href}`);
@@ -176,10 +190,20 @@
                                     }
                                 });
 
+                                // (5) 組純文字內容，順便洗掉會變成空心框框的字元
+                                let rawText = articleNode.textContent || '';
+                                rawText = rawText
+                                  .replace(/[\u200B-\u200D\uFEFF]/g, '')   // 零寬空白 / BOM
+                                  .replace(/[\uE000-\uF8FF]/g, '');        // 私用區（常拿來當 icon）
+
+                                const cleanedText = rawText
+                                  .replace(/\s+/g, ' ')
+                                  .trim();
+
                                 extractedData.push({
                                     title: link.title,
                                     url: link.url,
-                                    content: articleNode.textContent.replace(/\s+/g, ' ').trim(),
+                                    content: cleanedText,
                                     htmlContent: articleNode.innerHTML
                                 });
                             } else {
@@ -202,6 +226,7 @@
                         });
                     }
 
+                    // 避免被當成機器人，一頁休息一下
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 }
 
@@ -209,6 +234,7 @@
                 setIsProcessing(false);
             };
 
+            // 3. 下載 TXT
             const downloadText = () => {
                 if (results.length === 0) return;
                 
@@ -230,6 +256,7 @@
                 document.body.removeChild(link);
             };
 
+            // 4. 下載 HTML
             const downloadHtml = () => {
                 if (results.length === 0) return;
 
@@ -334,7 +361,9 @@
                         <div className="p-6 bg-blue-600 text-white flex justify-between items-center">
                             <div>
                                 <h1 className="text-2xl font-bold">網頁內容提取工具 (WOL Scraper)</h1>
-                                <p className="mt-2 text-blue-100">支援提取純文字與完整 HTML 排版格式，現在也可以選擇區間。</p>
+                                <p className="mt-2 text-blue-100">
+                                    支援提取純文字與完整 HTML 排版格式，支援連結區間選擇、相對連結改為絕對連結。
+                                </p>
                             </div>
                         </div>
                         
@@ -363,7 +392,7 @@
                                 </div>
                             </div>
 
-                            {/* 區間選擇區塊 */}
+                            {/* 區間選擇 */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -456,10 +485,17 @@
                                         {results.map((item, idx) => (
                                             <div key={idx} className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm hover:shadow-md transition">
                                                 <h4 className="font-bold text-lg text-blue-800 mb-1">{item.title}</h4>
-                                                <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-gray-500 hover:text-blue-600 hover:underline break-all mb-3 block">
+                                                <a
+                                                    href={item.url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="text-xs text-gray-500 hover:text-blue-600 hover:underline break-all mb-3 block"
+                                                >
                                                     {item.url}
                                                 </a>
-                                                <p className="text-sm text-gray-600 line-clamp-3 leading-relaxed">{item.content}</p>
+                                                <p className="text-sm text-gray-600 line-clamp-3 leading-relaxed">
+                                                    {item.content}
+                                                </p>
                                             </div>
                                         ))}
                                     </div>
