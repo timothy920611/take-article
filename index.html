@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WOL 網頁內容提取工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .checkbox-item:hover { background-color: #f0f7ff; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState } = React;
+        function App() {
+            const [targetUrl, setTargetUrl] = useState('');
+            const [fileTitle, setFileTitle] = useState('WOL_提取內容');
+            const [status, setStatus] = useState('等待開始...');
+            const [links, setLinks] = useState([]);
+            const [results, setResults] = useState([]);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [checkedUrls, setCheckedUrls] = useState(new Set());
+            const [filterText, setFilterText] = useState('');
+            const [rangeFrom, setRangeFrom] = useState('');
+            const [rangeTo, setRangeTo] = useState('');
+            const CORS_PROXY = 'https://corsproxy.io/?';
+            const checkedCount = checkedUrls.size;
+            const filteredLinks = filterText.trim() ? links.filter(l => l.title.includes(filterText.trim())) : links;
+            const allChecked = links.length > 0 && checkedCount === links.length;
+            const toggleCheck = (url) => {
+                setCheckedUrls(prev => { const next = new Set(prev); next.has(url) ? next.delete(url) : next.add(url); return next; });
+            };
+            const toggleAll = () => {
+                if (allChecked) { setCheckedUrls(new Set()); } else { setCheckedUrls(new Set(links.map(l => l.url))); }
+            };
+            const selectFiltered = () => {
+                setCheckedUrls(prev => { const next = new Set(prev); filteredLinks.forEach(l => next.add(l.url)); return next; });
+            };
+            const applyRange = (mode) => {
+                const total = links.length;
+                let from = parseInt(rangeFrom, 10);
+                let to = parseInt(rangeTo, 10);
+                if (isNaN(from)) from = 1;
+                if (isNaN(to)) to = total;
+                from = Math.max(1, Math.min(from, total));
+                to = Math.max(1, Math.min(to, total));
+                if (from > to) { const tmp = from; from = to; to = tmp; }
+                const rangeUrls = links.slice(from - 1, to).map(l => l.url);
+                setCheckedUrls(prev => {
+                    const next = new Set(prev);
+                    rangeUrls.forEach(url => mode === 'select' ? next.add(url) : next.delete(url));
+                    return next;
+                });
+            };
+            const deselectFiltered = () => {
+                setCheckedUrls(prev => { const next = new Set(prev); filteredLinks.forEach(l => next.delete(l.url)); return next; });
+            };
+            const extractArticleLinks = (doc) => {
+                const seen = new Set(); const result = [];
+                doc.querySelectorAll('a').forEach(a => {
+                    const href = a.getAttribute('href');
+                    if (href && href.includes('/wol/d/r24/lp-ch/')) {
+                        const fullUrl = href.startsWith('http') ? href : 'https://wol.jw.org' + href;
+                        if (!seen.has(fullUrl)) { seen.add(fullUrl); result.push({ title: a.textContent.trim() || fullUrl, url: fullUrl }); }
+                    }
+                });
+                return result;
+            };
+            const extractSubDirLinks = (doc) => {
+                const seen = new Set(); const result = [];
+                doc.querySelectorAll('a').forEach(a => {
+                    const href = a.getAttribute('href');
+                    if (!href) return;
+                    if (href.includes('/wol/toc/r24/lp-ch/') || href.includes('/wol/library/r24/lp-ch/')) {
+                        const fullUrl = href.startsWith('http') ? href : 'https://wol.jw.org' + href;
+                        if (!seen.has(fullUrl)) { seen.add(fullUrl); result.push({ title: a.textContent.trim() || fullUrl, url: fullUrl }); }
+                    }
+                });
+                return result;
+            };
+            const fetchLinks = async () => {
+                setIsProcessing(true); setStatus('正在獲取主頁面連結...'); setLinks([]); setResults([]); setCheckedUrls(new Set()); setFilterText(''); setProgress(0);
+                try {
+                    const response = await fetch(CORS_PROXY + encodeURIComponent(targetUrl));
+                    if (!response.ok) throw new Error('無法讀取頁面，可能是代理伺服器被阻擋。');
+                    const htmlText = await response.text();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(htmlText, 'text/html');
+                    let articleLinks = extractArticleLinks(doc);
+                    if (articleLinks.length > 0) {
+                        setLinks(articleLinks); setCheckedUrls(new Set(articleLinks.map(l => l.url)));
+                        setStatus('成功找到 ' + articleLinks.length + ' 個文章連結！請勾選想提取的項目，然後點擊「開始提取內容」。');
+                    } else {
+                        const subDirLinks = extractSubDirLinks(doc);
+                        if (subDirLinks.length === 0) { setStatus('找不到任何文章或子目錄連結，請確認網址是否正確。'); setIsProcessing(false); return; }
+                        setStatus('第一層找到 ' + subDirLinks.length + ' 個子目錄，正在展開第二層...');
+                        const allArticleLinks = []; const seenArticleUrls = new Set();
+                        for (let i = 0; i < subDirLinks.length; i++) {
+                            const subDir = subDirLinks[i];
+                            setStatus('展開第二層子目錄 (' + (i+1) + '/' + subDirLinks.length + ')：' + subDir.title);
+                            setProgress(Math.round(((i + 1) / subDirLinks.length) * 100));
+                            try {
+                                const subResponse = await fetch(CORS_PROXY + encodeURIComponent(subDir.url));
+                                if (!subResponse.ok) continue;
+                                const subHtml = await subResponse.text();
+                                const subDoc = parser.parseFromString(subHtml, 'text/html');
+                                const subArticles = extractArticleLinks(subDoc);
+                                subArticles.forEach(link => { if (!seenArticleUrls.has(link.url)) { seenArticleUrls.add(link.url); allArticleLinks.push(link); } });
+                                if (subArticles.length === 0) {
+                                    const level3Dirs = extractSubDirLinks(subDoc);
+                                    for (const l3 of level3Dirs) {
+                                        try {
+                                            const l3Res = await fetch(CORS_PROXY + encodeURIComponent(l3.url));
+                                            if (!l3Res.ok) continue;
+                                            const l3Html = await l3Res.text();
+                                            const l3Doc = parser.parseFromString(l3Html, 'text/html');
+                                            extractArticleLinks(l3Doc).forEach(link => { if (!seenArticleUrls.has(link.url)) { seenArticleUrls.add(link.url); allArticleLinks.push(link); } });
+                                        } catch(e) {}
+                                        await new Promise(r => setTimeout(r, 300));
+                                    }
+                                }
+                            } catch(e) { console.error('展開子目錄失敗: ' + subDir.url, e); }
+                            await new Promise(r => setTimeout(r, 500));
+                        }
+                        setLinks(allArticleLinks); setCheckedUrls(new Set(allArticleLinks.map(l => l.url))); setProgress(0);
+                        setStatus(allArticleLinks.length > 0 ? '展開兩層後，共找到 ' + allArticleLinks.length + ' 個文章連結！請勾選想提取的項目，然後點擊「開始提取內容」。' : '展開兩層後仍找不到文章連結，請確認網址格式是否正確。');
+                    }
+                } catch(error) { setStatus('錯誤: ' + error.message); } finally { setIsProcessing(false); }
+            };
+            const extractTextFromLinks = async () => {
+                const targetLinks = links.filter(l => checkedUrls.has(l.url));
+                if (targetLinks.length === 0) return;
+                setIsProcessing(true); setStatus('將提取 ' + targetLinks.length + ' 個已勾選連結，開始逐頁提取內容（每頁稍微暫停以避免被封鎖）...'); setResults([]); setProgress(0);
+                const extractedData = [];
+                for (let i = 0; i < targetLinks.length; i++) {
+                    const link = targetLinks[i];
+                    setStatus('正在提取 (' + (i+1) + '/' + targetLinks.length + '): ' + link.title);
+                    setProgress(Math.round(((i + 1) / targetLinks.length) * 100));
+                    try {
+                        const response = await fetch(CORS_PROXY + encodeURIComponent(link.url));
+                        if (response.ok) {
+                            const htmlText = await response.text();
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(htmlText, 'text/html');
+                            const articleNode = doc.querySelector('article') || doc.querySelector('#article') || doc.querySelector('.bodyTxt');
+                            if (articleNode) {
+                                articleNode.querySelectorAll('.pswp').forEach(n => n.remove());
+                                articleNode.querySelectorAll('.hidden, noscript, script, style, nav, footer, .docSubNav, .share-wrapper, .share-buttons, .icon, .bottom-nav, .groupFoot, ul.w-elements, [class*="icon"], .dc-icon, .rs-icon').forEach(el => el.remove());
+                                articleNode.querySelectorAll('a, span, i, em, strong').forEach(el => {
+                                    if (el.querySelector('img')) return;
+                                    let text = (el.textContent || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, '');
+                                    if (text.length === 0) el.remove();
+                                });
+                                articleNode.querySelectorAll('img').forEach(img => { const src = img.getAttribute('src'); if (src && src.startsWith('/')) img.setAttribute('src', 'https://wol.jw.org' + src); });
+                                articleNode.querySelectorAll('a').forEach(a => {
+                                    const href = a.getAttribute('href');
+                                    if (!href || href.startsWith('http://') || href.startsWith('https://') || href.startsWith('#')) return;
+                                    a.setAttribute('href', href.startsWith('/') ? 'https://wol.jw.org' + href : 'https://wol.jw.org/' + href);
+                                });
+                                let rawText = (articleNode.textContent || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/[\uE000-\uF8FF]/g, '');
+                                extractedData.push({ title: link.title, url: link.url, content: rawText.replace(/\s+/g, ' ').trim(), htmlContent: articleNode.innerHTML });
+                            } else {
+                                extractedData.push({ title: link.title, url: link.url, content: '無法找到文章主體內容。', htmlContent: '<p>無法找到文章主體內容。</p>' });
+                            }
+                        }
+                        setResults([...extractedData]);
+                    } catch(error) {
+                        console.error('提取 ' + link.url + ' 失敗:', error);
+                        extractedData.push({ title: link.title, url: link.url, content: '加載失敗。', htmlContent: '<p>加載失敗。</p>' });
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                setStatus('提取完成！本次共處理 ' + targetLinks.length + ' 筆。您可以選擇下載 TXT 或 HTML 格式。');
+                setIsProcessing(false);
+            };
+            const downloadText = () => {
+                if (results.length === 0) return;
+                let textContent = '========== ' + fileTitle + ' ==========\n\n';
+                results.forEach(item => { textContent += '==========\n標題: ' + item.title + '\n網址: ' + item.url + '\n內容:\n' + item.content + '\n\n'; });
+                const blob = new Blob(['\uFEFF' + textContent], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob); const a = document.createElement('a');
+                a.href = url; a.download = fileTitle + '.txt'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            };
+            const downloadHtml = () => {
+                if (results.length === 0) return;
+                let htmlString = '<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>' + fileTitle + '</title><style>body{font-family:\'Segoe UI\',Tahoma,Geneva,Verdana,sans-serif;max-width:900px;margin:0 auto;padding:20px;line-height:1.8;background-color:#f9fafb;color:#333}h1.main-title{text-align:center;color:#111827;padding-bottom:20px;border-bottom:2px solid #e5e7eb}.article-card{background:white;margin-bottom:40px;padding:30px;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.05);border:1px solid #e5e7eb}.article-title{color:#1d4ed8;margin-top:0;font-size:1.8em}.article-meta{font-size:.9em;margin-bottom:20px;padding-bottom:15px;border-bottom:1px solid #f3f4f6}.article-meta a{color:#3b82f6;text-decoration:none;word-break:break-all}.article-content img{max-width:100%;height:auto;border-radius:8px;margin:15px 0}.article-content a{color:#2563eb}</style></head><body><h1 class="main-title">' + fileTitle + '</h1>';
+                results.forEach(item => { htmlString += '<div class="article-card"><h2 class="article-title">' + item.title + '</h2><div class="article-meta"><span>來源網址：</span><a href="' + item.url + '" target="_blank" rel="noopener noreferrer">' + item.url + '</a></div><div class="article-content">' + item.htmlContent + '</div></div>'; });
+                htmlString += '</body></html>';
+                const blob = new Blob(['\uFEFF' + htmlString], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob); const a = document.createElement('a');
+                a.href = url; a.download = fileTitle + '.html'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            };
+            return (
+                <div className="min-h-screen p-4 md:p-8 font-sans text-gray-800">
+                    <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+                        <div className="p-6 bg-blue-600 text-white flex items-center gap-4">
+                            <img src="take_article_logo.png" alt="WOL Scraper Logo" className="w-10 h-10 rounded-lg bg-white/10 object-contain" />
+                            <div>
+                                <h1 className="text-2xl font-bold">網頁內容提取工具 (WOL Scraper)</h1>
+                                <p className="mt-2 text-blue-100">支援提取純文字與完整 HTML 排版格式，支援勾選連結、相對連結改為絕對連結。</p>
+                            </div>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">目標目錄網址</label>
+                                    <input type="text" value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" disabled={isProcessing} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">自訂檔案名稱與大標題</label>
+                                    <input type="text" value={fileTitle} onChange={(e) => setFileTitle(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" disabled={isProcessing} placeholder="例如：洞悉_A_內容彙整" />
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                                <button onClick={fetchLinks} disabled={isProcessing} className={'px-5 py-2.5 rounded-lg font-medium text-white shadow-sm transition ' + (isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800')}>1. 獲取頁面連結</button>
+                                <button onClick={extractTextFromLinks} disabled={isProcessing || checkedCount === 0} className={'px-5 py-2.5 rounded-lg font-medium text-white shadow-sm transition ' + (isProcessing || checkedCount === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800')}>2. 開始提取內容{checkedCount > 0 ? '（' + checkedCount + ' 筆）' : ''}</button>
+                                <div className="flex-grow"></div>
+                                <button onClick={downloadText} disabled={results.length === 0 || isProcessing} className={'px-5 py-2.5 rounded-lg font-medium text-white shadow-sm transition ' + (results.length === 0 || isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-700 hover:bg-gray-800 active:bg-gray-900')}>下載 TXT</button>
+                                <button onClick={downloadHtml} disabled={results.length === 0 || isProcessing} className={'px-5 py-2.5 rounded-lg font-medium text-white shadow-sm transition flex items-center gap-2 ' + (results.length === 0 || isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800')}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    下載 HTML (推薦)
+                                </button>
+                            </div>
+                            <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
+                                <h3 className="font-semibold text-blue-900 mb-2">系統狀態:</h3>
+                                <p className="text-sm text-blue-800">{status}</p>
+                                {isProcessing && (<div className="mt-3 w-full bg-blue-200 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: progress + '%' }}></div></div>)}
+                            </div>
+                            {links.length > 0 && (
+                                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                                    <div className="bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center gap-3 flex-wrap">
+                                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                                            <input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = !allChecked && checkedCount > 0; }} onChange={toggleAll} className="w-4 h-4 rounded accent-blue-600" disabled={isProcessing} />
+                                            <span className="text-sm font-medium text-gray-700">全選／全不選</span>
+                                        </label>
+                                        <span className="text-sm text-gray-500">已勾選 <span className="font-semibold text-blue-600">{checkedCount}</span> / {links.length} 個</span>
+                                        <div className="flex-grow"></div>
+                                        <input type="text" value={filterText} onChange={e => setFilterText(e.target.value)} placeholder="關鍵字篩選標題..." className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none w-44" disabled={isProcessing} />
+                                        {filterText.trim() && (<>
+                                            <button onClick={selectFiltered} disabled={isProcessing} className="text-xs px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition">勾選篩選結果</button>
+                                            <button onClick={deselectFiltered} disabled={isProcessing} className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition">取消篩選結果</button>
+                                        </>)}
+                                    </div>
+                                    <div className="bg-gray-50 border-b border-gray-200 px-4 py-2 flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs text-gray-500 mr-1">編號範圍：</span>
+                                        <input type="number" min="1" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)} placeholder={"起（1）"} className="text-sm px-2 py-1 border border-gray-300 rounded-lg w-24 outline-none focus:ring-2 focus:ring-blue-400" disabled={isProcessing} />
+                                        <span className="text-xs text-gray-400">～</span>
+                                        <input type="number" min="1" value={rangeTo} onChange={e => setRangeTo(e.target.value)} placeholder={"迄（" + links.length + "）"} className="text-sm px-2 py-1 border border-gray-300 rounded-lg w-24 outline-none focus:ring-2 focus:ring-blue-400" disabled={isProcessing} />
+                                        <button onClick={() => applyRange("select")} disabled={isProcessing} className="text-xs px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition">勾選此範圍</button>
+                                        <button onClick={() => applyRange("deselect")} disabled={isProcessing} className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition">取消此範圍</button>
+                                    </div>
+                                    <div className="max-h-72 overflow-y-auto custom-scrollbar divide-y divide-gray-100">
+                                        {filteredLinks.length === 0 && (<p className="text-sm text-gray-400 text-center py-6">無符合篩選條件的項目</p>)}
+                                        {filteredLinks.map((link) => (
+                                            <label key={link.url} className="checkbox-item flex items-center gap-3 px-4 py-2.5 cursor-pointer transition">
+                                                <input type="checkbox" checked={checkedUrls.has(link.url)} onChange={() => toggleCheck(link.url)} className="w-4 h-4 rounded accent-blue-600 flex-shrink-0" disabled={isProcessing} />
+                                                <span className="text-xs text-gray-400 w-8 flex-shrink-0 text-right">{links.indexOf(link) + 1}</span>
+                                                <span className="text-sm text-gray-800 leading-snug">{link.title}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {results.length > 0 && (
+                                <div className="mt-8 border-t border-gray-200 pt-6">
+                                    <h3 className="font-semibold text-xl mb-4 text-gray-800">提取預覽 ({results.length} 筆)</h3>
+                                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {results.map((item, idx) => (
+                                            <div key={idx} className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm hover:shadow-md transition">
+                                                <h4 className="font-bold text-lg text-blue-800 mb-1">{item.title}</h4>
+                                                <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-gray-500 hover:text-blue-600 hover:underline break-all mb-3 block">{item.url}</a>
+                                                <p className="text-sm text-gray-600 line-clamp-3 leading-relaxed">{item.content}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
