@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WOL 網頁內容提取工具</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f3f4f6; color: #1f2937; min-height: 100vh; padding: 24px 16px; }
+        .app { max-width: 860px; margin: 0 auto; background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden; border: 1px solid #e5e7eb; }
+        .header { background: #2563eb; color: white; padding: 24px; display: flex; align-items: center; gap: 16px; }
+        .header img { width: 44px; height: 44px; border-radius: 10px; background: rgba(255,255,255,0.15); object-fit: contain; }
+        .header h1 { font-size: 1.4rem; font-weight: 700; }
+        .header p { font-size: 0.85rem; color: #bfdbfe; margin-top: 4px; }
+        .body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+        .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media(max-width:600px){ .row2 { grid-template-columns: 1fr; } }
+        label.field-label { display: block; font-size: 0.85rem; font-weight: 600; color: #374151; margin-bottom: 6px; }
+        input[type=text], input[type=number] { width: 100%; padding: 10px 14px; border: 1.5px solid #d1d5db; border-radius: 8px; font-size: 0.95rem; outline: none; transition: border-color .2s; }
+        input[type=text]:focus, input[type=number]:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+        input:disabled { background: #f9fafb; color: #9ca3af; }
+        .btn-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .btn { padding: 10px 20px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; border: none; cursor: pointer; transition: background .15s, opacity .15s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-blue { background: #2563eb; color: white; } .btn-blue:not(:disabled):hover { background: #1d4ed8; }
+        .btn-green { background: #059669; color: white; } .btn-green:not(:disabled):hover { background: #047857; }
+        .btn-gray { background: #374151; color: white; } .btn-gray:not(:disabled):hover { background: #1f2937; }
+        .btn-indigo { background: #4f46e5; color: white; } .btn-indigo:not(:disabled):hover { background: #4338ca; }
+        .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+        .btn-light-blue { background: #dbeafe; color: #1d4ed8; } .btn-light-blue:not(:disabled):hover { background: #bfdbfe; }
+        .btn-light-gray { background: #f3f4f6; color: #4b5563; } .btn-light-gray:not(:disabled):hover { background: #e5e7eb; }
+        .spacer { flex: 1; }
+        .status-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px 16px; }
+        .status-box h3 { font-size: 0.85rem; font-weight: 700; color: #1e40af; margin-bottom: 6px; }
+        .status-box p { font-size: 0.88rem; color: #1d4ed8; line-height: 1.6; }
+        .progress-wrap { margin-top: 10px; background: #bfdbfe; border-radius: 99px; height: 6px; overflow: hidden; }
+        .progress-bar { height: 100%; background: #2563eb; border-radius: 99px; transition: width .3s; }
+        .checklist-box { border: 1.5px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
+        .checklist-header { background: #f9fafb; border-bottom: 1px solid #e5e7eb; padding: 10px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .checklist-range { background: #f9fafb; border-bottom: 1px solid #e5e7eb; padding: 8px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.82rem; color: #6b7280; }
+        .checklist-range input { width: 80px; padding: 5px 8px; font-size: 0.82rem; }
+        .checklist-body { max-height: 280px; overflow-y: auto; }
+        .checklist-body::-webkit-scrollbar { width: 6px; }
+        .checklist-body::-webkit-scrollbar-track { background: #f1f1f1; }
+        .checklist-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .checklist-item { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid #f3f4f6; cursor: pointer; transition: background .1s; }
+        .checklist-item:last-child { border-bottom: none; }
+        .checklist-item:hover { background: #f0f7ff; }
+        .checklist-item input[type=checkbox] { width: 16px; height: 16px; flex-shrink: 0; accent-color: #2563eb; cursor: pointer; }
+        .checklist-item .num { font-size: 0.75rem; color: #9ca3af; width: 28px; text-align: right; flex-shrink: 0; }
+        .checklist-item .title { font-size: 0.88rem; color: #1f2937; line-height: 1.4; }
+        .check-count { font-size: 0.82rem; color: #6b7280; }
+        .check-count b { color: #2563eb; }
+        .filter-input { font-size: 0.82rem; padding: 6px 10px; border: 1.5px solid #d1d5db; border-radius: 8px; outline: none; width: 160px; }
+        .filter-input:focus { border-color: #3b82f6; }
+        .empty-msg { text-align: center; padding: 24px; font-size: 0.85rem; color: #9ca3af; }
+        .preview-section { border-top: 1.5px solid #f3f4f6; padding-top: 20px; }
+        .preview-section h3 { font-size: 1.05rem; font-weight: 700; color: #1f2937; margin-bottom: 14px; }
+        .preview-list { max-height: 480px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+        .preview-list::-webkit-scrollbar { width: 6px; }
+        .preview-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .preview-card { background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+        .preview-card h4 { font-size: 1rem; font-weight: 700; color: #1d4ed8; margin-bottom: 4px; }
+        .preview-card a { font-size: 0.75rem; color: #9ca3af; word-break: break-all; display: block; margin-bottom: 8px; text-decoration: none; }
+        .preview-card a:hover { color: #2563eb; text-decoration: underline; }
+        .preview-card p { font-size: 0.85rem; color: #6b7280; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+        /* Modal */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.52); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .modal-overlay.hidden { display: none; }
+        .modal { background: white; border-radius: 16px; max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25); }
+        .modal-header { background: #2563eb; border-radius: 16px 16px 0 0; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; }
+        .modal-header h2 { color: white; font-size: 1.15rem; font-weight: 700; }
+        .modal-header p { color: #bfdbfe; font-size: 0.82rem; margin-top: 3px; }
+        .modal-close { background: rgba(255,255,255,0.2); border: none; border-radius: 8px; color: white; width: 32px; height: 32px; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .modal-close:hover { background: rgba(255,255,255,0.35); }
+        .modal-body { padding: 24px; font-size: 0.9rem; line-height: 1.8; color: #374151; }
+        .step { margin-bottom: 20px; }
+        .step-title { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+        .step-num { background: #2563eb; color: white; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; }
+        .step-title span { font-weight: 700; font-size: 0.95rem; }
+        .step-desc { margin-left: 36px; color: #6b7280; font-size: 0.88rem; }
+        .step-desc ul { padding-left: 18px; margin-top: 4px; }
+        .step-desc li { margin-bottom: 2px; }
+        .step-desc strong { color: #374151; }
+        .warn-box { background: #fef9c3; border: 1px solid #fde047; border-radius: 10px; padding: 12px 16px; font-size: 0.84rem; color: #713f12; margin-top: 4px; }
+        .modal-footer { padding: 0 24px 24px; text-align: right; }
+    </style>
+</head>
+<body>
+
+<!-- 使用教學 Modal -->
+<div class="modal-overlay" id="guideModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div>
+                <h2>📖 使用教學</h2>
+                <p>WOL 網頁內容提取工具</p>
+            </div>
+            <button class="modal-close" onclick="closeGuide()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="step">
+                <div class="step-title"><div class="step-num">1</div><span>輸入目標網址</span></div>
+                <div class="step-desc">在「目標目錄網址」欄位貼上 WOL 的目錄頁網址，例如某個出版物的索引頁。</div>
+            </div>
+            <div class="step">
+                <div class="step-title"><div class="step-num">2</div><span>獲取頁面連結</span></div>
+                <div class="step-desc">點擊「1. 獲取頁面連結」，工具會自動爬取目錄（最多兩層子目錄），並將所有文章標題列出，<strong>預設全部勾選</strong>。</div>
+            </div>
+            <div class="step">
+                <div class="step-title"><div class="step-num">3</div><span>選擇想提取的文章</span></div>
+                <div class="step-desc">
+                    可用以下三種方式篩選：
+                    <ul>
+                        <li><strong>逐一勾選</strong>：直接點選清單中的項目</li>
+                        <li><strong>編號範圍</strong>：輸入起訖編號後點「勾選此範圍」</li>
+                        <li><strong>關鍵字篩選</strong>：輸入關鍵字後點「勾選篩選結果」</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-title"><div class="step-num">4</div><span>開始提取並下載</span></div>
+                <div class="step-desc">確認勾選後，點擊「2. 開始提取內容」，等待完成後選擇下載 <strong>TXT</strong>（純文字）或 <strong>HTML</strong>（保留排版，推薦）格式。</div>
+            </div>
+            <div class="warn-box">⚠️ 提取速度會刻意放慢（每頁間隔約 1 秒），以避免被網站封鎖。文章數量多時請耐心等候。</div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-blue" onclick="closeGuide()">開始使用</button>
+        </div>
+    </div>
+</div>
+
+<div class="app">
+    <div class="header">
+        <img src="take_article_logo.png" alt="logo">
+        <div>
+            <h1>網頁內容提取工具 (WOL Scraper)</h1>
+            <p>支援提取純文字與完整 HTML 排版格式，支援勾選連結、相對連結改為絕對連結。</p>
+        </div>
+    </div>
+    <div class="body">
+        <!-- 輸入區 -->
+        <div class="row2">
+            <div>
+                <label class="field-label">目標目錄網址</label>
+                <input type="text" id="targetUrl" placeholder="貼上 WOL 目錄頁網址…">
+            </div>
+            <div>
+                <label class="field-label">自訂檔案名稱與大標題</label>
+                <input type="text" id="fileTitle" value="WOL_提取內容" placeholder="例如：洞悉_A_內容彙整">
+            </div>
+        </div>
+
+        <!-- 並行設定 -->
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <label class="field-label" style="margin:0;white-space:nowrap;">並行提取數量：</label>
+            <input type="range" id="concurrency" min="1" max="8" value="3" style="width:160px;accent-color:#2563eb;" oninput="document.getElementById('concurrencyVal').textContent=this.value">
+            <span id="concurrencyVal" style="font-weight:700;color:#2563eb;min-width:12px;">3</span>
+            <span style="font-size:0.8rem;color:#9ca3af;">（1 = 安全慢速；8 = 快速但可能被封鎖）</span>
+        </div>
+
+        <!-- 按鈕列 -->
+        <div class="btn-row">
+            <button class="btn btn-blue" id="btnFetch" onclick="fetchLinks()">1. 獲取頁面連結</button>
+            <button class="btn btn-green" id="btnExtract" onclick="extractContent()" disabled>2. 開始提取內容</button>
+            <div class="spacer"></div>
+            <button class="btn btn-gray" id="btnTxt" onclick="downloadTxt()" disabled>下載 TXT</button>
+            <button class="btn btn-indigo" id="btnHtml" onclick="downloadHtml()" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                下載 HTML (推薦)
+            </button>
+        </div>
+
+        <!-- 狀態列 -->
+        <div class="status-box">
+            <h3>系統狀態</h3>
+            <p id="statusText">等待開始...</p>
+            <div class="progress-wrap" id="progressWrap" style="display:none">
+                <div class="progress-bar" id="progressBar" style="width:0%"></div>
+            </div>
+        </div>
+
+        <!-- 勾選清單 -->
+        <div class="checklist-box" id="checklistBox" style="display:none">
+            <div class="checklist-header">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.88rem;font-weight:600;color:#374151;">
+                    <input type="checkbox" id="checkAll" onchange="toggleAll(this)"> 全選／全不選
+                </label>
+                <span class="check-count">已勾選 <b id="checkedCount">0</b> / <span id="totalCount">0</span> 個</span>
+                <div class="spacer"></div>
+                <input type="text" class="filter-input" id="filterInput" placeholder="關鍵字篩選標題…" oninput="onFilter()">
+                <button class="btn btn-sm btn-light-blue" id="btnSelectFiltered" style="display:none" onclick="selectFiltered()">勾選篩選結果</button>
+                <button class="btn btn-sm btn-light-gray" id="btnDeselectFiltered" style="display:none" onclick="deselectFiltered()">取消篩選結果</button>
+            </div>
+            <div class="checklist-range">
+                <span>編號範圍：</span>
+                <input type="number" id="rangeFrom" min="1" placeholder="起">
+                <span>～</span>
+                <input type="number" id="rangeTo" min="1" placeholder="迄" id="rangeTo">
+                <button class="btn btn-sm btn-light-blue" onclick="applyRange('select')">勾選此範圍</button>
+                <button class="btn btn-sm btn-light-gray" onclick="applyRange('deselect')">取消此範圍</button>
+            </div>
+            <div class="checklist-body" id="checklistBody"></div>
+        </div>
+
+        <!-- 提取預覽 -->
+        <div class="preview-section" id="previewSection" style="display:none">
+            <h3>提取預覽 (<span id="previewCount">0</span> 筆)</h3>
+            <div class="preview-list" id="previewList"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const CORS_PROXY = 'https://corsproxy.io/?';
+let allLinks = [];
+let checkedUrls = new Set();
+let results = [];
+let isProcessing = false;
+
+function closeGuide() {
+    document.getElementById('guideModal').classList.add('hidden');
+}
+
+function setStatus(msg) {
+    document.getElementById('statusText').textContent = msg;
+}
+
+function setProgress(pct) {
+    const wrap = document.getElementById('progressWrap');
+    const bar = document.getElementById('progressBar');
+    if (pct === null) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+    bar.style.width = pct + '%';
+}
+
+function setProcessing(val) {
+    isProcessing = val;
+    document.getElementById('btnFetch').disabled = val;
+    document.getElementById('filterInput').disabled = val;
+    document.getElementById('rangeFrom').disabled = val;
+    document.getElementById('rangeTo').disabled = val;
+    updateExtractBtn();
+}
+
+function updateExtractBtn() {
+    const btn = document.getElementById('btnExtract');
+    const count = checkedUrls.size;
+    btn.disabled = isProcessing || count === 0;
+    btn.textContent = count > 0 ? `2. 開始提取內容（${count} 筆）` : '2. 開始提取內容';
+}
+
+function updateCheckedCount() {
+    document.getElementById('checkedCount').textContent = checkedUrls.size;
+    const allCb = document.getElementById('checkAll');
+    allCb.checked = allLinks.length > 0 && checkedUrls.size === allLinks.length;
+    allCb.indeterminate = checkedUrls.size > 0 && checkedUrls.size < allLinks.length;
+    updateExtractBtn();
+}
+
+function renderChecklist() {
+    const filter = document.getElementById('filterInput').value.trim();
+    const body = document.getElementById('checklistBody');
+    const filtered = filter ? allLinks.filter(l => l.title.includes(filter)) : allLinks;
+
+    if (filtered.length === 0) {
+        body.innerHTML = '<div class="empty-msg">無符合篩選條件的項目</div>';
+        return;
+    }
+
+    body.innerHTML = filtered.map(link => {
+        const idx = allLinks.indexOf(link) + 1;
+        const checked = checkedUrls.has(link.url) ? 'checked' : '';
+        const safeTitle = link.title.replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        return `<label class="checklist-item">
+            <input type="checkbox" ${checked} data-url="${link.url}" onchange="toggleOne(this)">
+            <span class="num">${idx}</span>
+            <span class="title">${safeTitle}</span>
+        </label>`;
+    }).join('');
+}
+
+function toggleOne(cb) {
+    const url = cb.dataset.url;
+    if (cb.checked) checkedUrls.add(url); else checkedUrls.delete(url);
+    updateCheckedCount();
+}
+
+function toggleAll(cb) {
+    if (cb.checked) { allLinks.forEach(l => checkedUrls.add(l.url)); }
+    else { checkedUrls.clear(); }
+    renderChecklist();
+    updateCheckedCount();
+}
+
+function onFilter() {
+    const val = document.getElementById('filterInput').value.trim();
+    document.getElementById('btnSelectFiltered').style.display = val ? '' : 'none';
+    document.getElementById('btnDeselectFiltered').style.display = val ? '' : 'none';
+    renderChecklist();
+}
+
+function selectFiltered() {
+    const filter = document.getElementById('filterInput').value.trim();
+    allLinks.filter(l => l.title.includes(filter)).forEach(l => checkedUrls.add(l.url));
+    renderChecklist(); updateCheckedCount();
+}
+
+function deselectFiltered() {
+    const filter = document.getElementById('filterInput').value.trim();
+    allLinks.filter(l => l.title.includes(filter)).forEach(l => checkedUrls.delete(l.url));
+    renderChecklist(); updateCheckedCount();
+}
+
+function applyRange(mode) {
+    const total = allLinks.length;
+    let from = parseInt(document.getElementById('rangeFrom').value, 10);
+    let to = parseInt(document.getElementById('rangeTo').value, 10);
+    if (isNaN(from)) from = 1;
+    if (isNaN(to)) to = total;
+    from = Math.max(1, Math.min(from, total));
+    to = Math.max(1, Math.min(to, total));
+    if (from > to) { [from, to] = [to, from]; }
+    allLinks.slice(from - 1, to).forEach(l => mode === 'select' ? checkedUrls.add(l.url) : checkedUrls.delete(l.url));
+    renderChecklist(); updateCheckedCount();
+}
+
+function extractArticleLinks(doc) {
+    const seen = new Set(); const result = [];
+    doc.querySelectorAll('a').forEach(a => {
+        const href = a.getAttribute('href');
+        if (href && href.includes('/wol/d/r24/lp-ch/')) {
+            const url = href.startsWith('http') ? href : 'https://wol.jw.org' + href;
+            if (!seen.has(url)) { seen.add(url); result.push({ title: a.textContent.trim() || url, url }); }
+        }
+    });
+    return result;
+}
+
+function extractSubDirLinks(doc) {
+    const seen = new Set(); const result = [];
+    doc.querySelectorAll('a').forEach(a => {
+        const href = a.getAttribute('href');
+        if (!href) return;
+        if (href.includes('/wol/toc/r24/lp-ch/') || href.includes('/wol/library/r24/lp-ch/')) {
+            const url = href.startsWith('http') ? href : 'https://wol.jw.org' + href;
+            if (!seen.has(url)) { seen.add(url); result.push({ title: a.textContent.trim() || url, url }); }
+        }
+    });
+    return result;
+}
+
+async function fetchLinks() {
+    const targetUrl = document.getElementById('targetUrl').value.trim();
+    if (!targetUrl) { setStatus('請先輸入目標網址。'); return; }
+    setProcessing(true);
+    setStatus('正在獲取主頁面連結...');
+    setProgress(0);
+    allLinks = []; checkedUrls.clear(); results = [];
+    document.getElementById('checklistBox').style.display = 'none';
+    document.getElementById('previewSection').style.display = 'none';
+    document.getElementById('filterInput').value = '';
+    document.getElementById('btnSelectFiltered').style.display = 'none';
+    document.getElementById('btnDeselectFiltered').style.display = 'none';
+    document.getElementById('btnTxt').disabled = true;
+    document.getElementById('btnHtml').disabled = true;
+
+    try {
+        const res = await fetch(CORS_PROXY + encodeURIComponent(targetUrl));
+        if (!res.ok) throw new Error('無法讀取頁面，可能是代理伺服器被阻擋。');
+        const html = await res.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        let articleLinks = extractArticleLinks(doc);
+
+        if (articleLinks.length > 0) {
+            allLinks = articleLinks;
+        } else {
+            const subDirs = extractSubDirLinks(doc);
+            if (subDirs.length === 0) { setStatus('找不到任何文章或子目錄連結，請確認網址是否正確。'); setProcessing(false); return; }
+            setStatus(`第一層找到 ${subDirs.length} 個子目錄，正在展開第二層...`);
+            const seenUrls = new Set();
+            for (let i = 0; i < subDirs.length; i++) {
+                setStatus(`展開第二層 (${i+1}/${subDirs.length})：${subDirs[i].title}`);
+                setProgress(Math.round((i+1)/subDirs.length*100));
+                try {
+                    const r2 = await fetch(CORS_PROXY + encodeURIComponent(subDirs[i].url));
+                    if (!r2.ok) continue;
+                    const d2 = parser.parseFromString(await r2.text(), 'text/html');
+                    const arts = extractArticleLinks(d2);
+                    arts.forEach(l => { if (!seenUrls.has(l.url)) { seenUrls.add(l.url); allLinks.push(l); } });
+                    if (arts.length === 0) {
+                        const l3dirs = extractSubDirLinks(d2);
+                        for (const l3 of l3dirs) {
+                            try {
+                                const r3 = await fetch(CORS_PROXY + encodeURIComponent(l3.url));
+                                if (!r3.ok) continue;
+                                const d3 = parser.parseFromString(await r3.text(), 'text/html');
+                                extractArticleLinks(d3).forEach(l => { if (!seenUrls.has(l.url)) { seenUrls.add(l.url); allLinks.push(l); } });
+                            } catch(e) {}
+                            await sleep(300);
+                        }
+                    }
+                } catch(e) {}
+                await sleep(500);
+            }
+        }
+
+        checkedUrls = new Set(allLinks.map(l => l.url));
+        document.getElementById('totalCount').textContent = allLinks.length;
+        document.getElementById('rangeTo').placeholder = '迄（' + allLinks.length + '）';
+        setProgress(null);
+        renderChecklist();
+        updateCheckedCount();
+        document.getElementById('checklistBox').style.display = '';
+        setStatus(`成功找到 ${allLinks.length} 個文章連結！請勾選想提取的項目，然後點擊「開始提取內容」。`);
+    } catch(e) {
+        setStatus('錯誤：' + e.message);
+    }
+    setProcessing(false);
+}
+
+function parseArticle(html, link) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const article = doc.querySelector('article') || doc.querySelector('#article') || doc.querySelector('.bodyTxt');
+    if (!article) return { title: link.title, url: link.url, content: '無法找到文章主體內容。', htmlContent: '<p>無法找到文章主體內容。</p>' };
+    article.querySelectorAll('.pswp').forEach(n => n.remove());
+    // 移除互動回答框及其 label（input/textarea 的父容器一起移除）
+    article.querySelectorAll('input, textarea').forEach(el => {
+        // 往上找包含這個輸入框的小容器，最多走3層
+        let target = el;
+        for (let i = 0; i < 3; i++) {
+            const parent = target.parentElement;
+            if (!parent || parent === article) break;
+            // 如果父元素只包含這個輸入框和 label，整個移除
+            const kids = Array.from(parent.childNodes).filter(n => n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim()));
+            if (kids.length <= 3) { target = parent; } else { break; }
+        }
+        target.remove();
+    });
+    article.querySelectorAll('.hidden,noscript,script,style,nav,footer,.docSubNav,.share-wrapper,.share-buttons,.icon,.bottom-nav,.groupFoot,ul.w-elements,.dc-icon,.rs-icon,.userInput,[class*="answer"],[class*="Answer"],[class*="response"]').forEach(el => el.remove());
+    // 移除只剩注音/拼音標記文字的殘留 label
+    article.querySelectorAll('label').forEach(el => { if (!el.querySelector('input,textarea,select')) el.remove(); });
+    article.querySelectorAll('a,span,i,em,strong').forEach(el => {
+        if (el.querySelector('img')) return;
+        if (!(el.textContent||'').replace(/[​-‍﻿\s]/g,'')) el.remove();
+    });
+    article.querySelectorAll('img').forEach(img => {
+        const s = img.getAttribute('src');
+        if (s && s.startsWith('/')) img.setAttribute('src','https://wol.jw.org'+s);
+    });
+    article.querySelectorAll('a').forEach(a => {
+        const h = a.getAttribute('href');
+        if (!h||h.startsWith('http')||h.startsWith('#')) return;
+        a.setAttribute('href', h.startsWith('/') ? 'https://wol.jw.org'+h : 'https://wol.jw.org/'+h);
+    });
+    const text = (article.textContent||'').replace(/[​-‍﻿-]/g,'').replace(/\s+/g,' ').trim();
+    return { title: link.title, url: link.url, content: text, htmlContent: article.innerHTML };
+}
+
+async function fetchOne(link) {
+    try {
+        const res = await fetch(CORS_PROXY + encodeURIComponent(link.url));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return parseArticle(await res.text(), link);
+    } catch(e) {
+        return { title: link.title, url: link.url, content: '加載失敗：' + e.message, htmlContent: '<p>加載失敗。</p>' };
+    }
+}
+
+async function extractContent() {
+    const targets = allLinks.filter(l => checkedUrls.has(l.url));
+    if (targets.length === 0) return;
+    const concurrency = parseInt(document.getElementById('concurrency').value, 10) || 3;
+    const batchDelay = concurrency <= 2 ? 800 : concurrency <= 4 ? 400 : 200;
+
+    setProcessing(true);
+    setStatus('將提取 ' + targets.length + ' 個已勾選連結（並行數：' + concurrency + '）...');
+    setProgress(0);
+    results = [];
+    const ordered = new Array(targets.length).fill(null);
+    document.getElementById('previewSection').style.display = 'none';
+    document.getElementById('previewList').innerHTML = '';
+
+    let done = 0;
+    for (let i = 0; i < targets.length; i += concurrency) {
+        const batch = targets.slice(i, i + concurrency);
+        setStatus('正在提取 ' + (done+1) + '～' + Math.min(done+batch.length, targets.length) + ' / ' + targets.length + '...');
+        const batchResults = await Promise.all(batch.map(link => fetchOne(link)));
+        batchResults.forEach((r, j) => { ordered[i + j] = r; });
+        done += batch.length;
+        results = ordered.filter(Boolean);
+        setProgress(Math.round(done / targets.length * 100));
+        renderPreview();
+        if (i + concurrency < targets.length) await sleep(batchDelay);
+    }
+
+    setProgress(null);
+    setStatus('提取完成！本次共處理 ' + results.length + ' 筆。可選擇下載 TXT 或 HTML 格式。');
+    document.getElementById('btnTxt').disabled = false;
+    document.getElementById('btnHtml').disabled = false;
+    setProcessing(false);
+}
+
+function renderPreview() {
+    const list = document.getElementById('previewList');
+    document.getElementById('previewCount').textContent = results.length;
+    document.getElementById('previewSection').style.display = '';
+    list.innerHTML = results.map(item => `
+        <div class="preview-card">
+            <h4>${item.title.replace(/</g,'&lt;')}</h4>
+            <a href="${item.url}" target="_blank" rel="noreferrer">${item.url}</a>
+            <p>${item.content.replace(/</g,'&lt;').slice(0,200)}…</p>
+        </div>`).join('');
+}
+
+function downloadTxt() {
+    if (!results.length) return;
+    let txt = `========== ${document.getElementById('fileTitle').value} ==========\n\n`;
+    results.forEach(r => { txt += `==========\n標題: ${r.title}\n網址: ${r.url}\n內容:\n${r.content}\n\n`; });
+    download('\uFEFF' + txt, document.getElementById('fileTitle').value + '.txt', 'text/plain;charset=utf-8');
+}
+
+function downloadHtml() {
+    if (!results.length) return;
+    const title = document.getElementById('fileTitle').value;
+    let html = `<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><title>${title}</title><style>body{font-family:'Segoe UI',sans-serif;max-width:900px;margin:0 auto;padding:20px;line-height:1.8;background:#f9fafb;color:#333}h1.main-title{text-align:center;color:#111827;padding-bottom:20px;border-bottom:2px solid #e5e7eb}.article-card{background:white;margin-bottom:40px;padding:30px;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,.05);border:1px solid #e5e7eb}.article-title{color:#1d4ed8;margin-top:0;font-size:1.8em}.article-meta{font-size:.9em;margin-bottom:20px;padding-bottom:15px;border-bottom:1px solid #f3f4f6}.article-meta a{color:#3b82f6;text-decoration:none;word-break:break-all}.article-content img{max-width:100%;height:auto;border-radius:8px;margin:15px 0}.article-content a{color:#2563eb}</style></head><body><h1 class="main-title">${title}</h1>`;
+    results.forEach(r => { html += `<div class="article-card"><h2 class="article-title">${r.title}</h2><div class="article-meta"><span>來源網址：</span><a href="${r.url}" target="_blank">${r.url}</a></div><div class="article-content">${r.htmlContent}</div></div>`; });
+    html += '</body></html>';
+    download('\uFEFF' + html, title + '.html', 'text/html;charset=utf-8');
+}
+
+function download(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
