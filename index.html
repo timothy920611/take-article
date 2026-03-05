@@ -121,7 +121,7 @@
             </div>
             <div class="step">
                 <div class="step-title"><div class="step-num">4</div><span>開始提取並下載</span></div>
-                <div class="step-desc">確認勾選後，點擊「2. 開始提取內容」，等待完成後選擇下載 <strong>TXT</strong>（純文字）或 <strong>HTML</strong>（保留排版，推薦）格式。</div>
+                <div class="step-desc">確認勾選後，點擊「2. 開始提取內容」，等待完成後選擇下載 <strong>MD</strong>（Markdown，保留連結與圖片）或 <strong>HTML</strong>（保留排版，推薦）格式。</div>
             </div>
             <div class="warn-box">⚠️ 提取速度會刻意放慢（每頁間隔約 1 秒），以避免被網站封鎖。文章數量多時請耐心等候。</div>
         </div>
@@ -165,7 +165,7 @@
             <button class="btn btn-blue" id="btnFetch" onclick="fetchLinks()">1. 獲取頁面連結</button>
             <button class="btn btn-green" id="btnExtract" onclick="extractContent()" disabled>2. 開始提取內容</button>
             <div class="spacer"></div>
-            <button class="btn btn-gray" id="btnTxt" onclick="downloadTxt()" disabled>下載 TXT</button>
+            <button class="btn btn-gray" id="btnTxt" onclick="downloadMd()" disabled>下載 MD</button>
             <button class="btn btn-indigo" id="btnHtml" onclick="downloadHtml()" disabled>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 下載 HTML (推薦)
@@ -498,7 +498,7 @@ async function extractContent() {
     }
 
     setProgress(null);
-    setStatus('提取完成！本次共處理 ' + results.length + ' 筆。可選擇下載 TXT 或 HTML 格式。');
+    setStatus('提取完成！本次共處理 ' + results.length + ' 筆。可選擇下載 MD 或 HTML 格式。');
     document.getElementById('btnTxt').disabled = false;
     document.getElementById('btnHtml').disabled = false;
     setProcessing(false);
@@ -516,11 +516,81 @@ function renderPreview() {
         </div>`).join('');
 }
 
-function downloadTxt() {
+function htmlToMd(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    function nodeToMd(node) {
+        if (node.nodeType === 3) {
+            return node.textContent;
+        }
+        if (node.nodeType !== 1) return '';
+
+        const tag = node.tagName.toLowerCase();
+        const children = Array.from(node.childNodes).map(nodeToMd).join('');
+
+        if (tag === 'img') {
+            const src = node.getAttribute('src') || '';
+            const alt = node.getAttribute('alt') || '';
+            return src ? `\n![${alt}](${src})\n` : '';
+        }
+        if (tag === 'a') {
+            const href = node.getAttribute('href') || '';
+            const text = children.trim();
+            if (!text) return '';
+            return href ? `[${text}](${href})` : text;
+        }
+        if (tag === 'h1') return `\n# ${children.trim()}\n`;
+        if (tag === 'h2') return `\n## ${children.trim()}\n`;
+        if (tag === 'h3') return `\n### ${children.trim()}\n`;
+        if (tag === 'h4') return `\n#### ${children.trim()}\n`;
+        if (tag === 'h5') return `\n##### ${children.trim()}\n`;
+        if (tag === 'h6') return `\n###### ${children.trim()}\n`;
+        if (tag === 'p') return `\n${children.trim()}\n`;
+        if (tag === 'br') return `\n`;
+        if (tag === 'strong' || tag === 'b') return `**${children}**`;
+        if (tag === 'em' || tag === 'i') return `*${children}*`;
+        if (tag === 'blockquote') return `\n> ${children.trim().replace(/\n/g, '\n> ')}\n`;
+        if (tag === 'ul') {
+            return '\n' + Array.from(node.children).map(li => `- ${Array.from(li.childNodes).map(nodeToMd).join('').trim()}`).join('\n') + '\n';
+        }
+        if (tag === 'ol') {
+            return '\n' + Array.from(node.children).map((li, i) => `${i+1}. ${Array.from(li.childNodes).map(nodeToMd).join('').trim()}`).join('\n') + '\n';
+        }
+        if (tag === 'li') return children;
+        if (tag === 'hr') return `\n---\n`;
+        if (tag === 'code') return `\`${children}\``;
+        if (tag === 'pre') return `\n\`\`\`\n${node.textContent}\n\`\`\`\n`;
+        if (['script','style','nav','footer'].includes(tag)) return '';
+        return children;
+    }
+
+    return Array.from(doc.body.childNodes).map(nodeToMd).join('')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function cleanTitle(t) {
+    return (t || '').replace(/[\r\n]+/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
+}
+
+function downloadMd() {
     if (!results.length) return;
-    let txt = `========== ${document.getElementById('fileTitle').value} ==========\n\n`;
-    results.forEach(r => { txt += `==========\n標題: ${r.title}\n網址: ${r.url}\n內容:\n${r.content}\n\n`; });
-    download('\uFEFF' + txt, document.getElementById('fileTitle').value + '.txt', 'text/plain;charset=utf-8');
+    const title = document.getElementById('fileTitle').value;
+
+    // 建立目錄（標題清除多餘空白，連結使用絕對網址）
+    let toc = `## 目錄\n\n`;
+    results.forEach((r, i) => {
+        toc += `${i + 1}. [${cleanTitle(r.title)}](${r.url})\n`;
+    });
+
+    let md = `# ${title}\n\n${toc}\n---\n\n`;
+    results.forEach(r => {
+        md += `---\n\n## ${cleanTitle(r.title)}\n\n來源網址：[${r.url}](${r.url})\n\n`;
+        md += htmlToMd(r.htmlContent);
+        md += '\n\n';
+    });
+    download('\uFEFF' + md.trimEnd() + '\n', title + '.md', 'text/markdown;charset=utf-8');
 }
 
 function downloadHtml() {
