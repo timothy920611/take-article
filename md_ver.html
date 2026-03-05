@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WOL 網頁內容提取工具</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f3f4f6; color: #1f2937; min-height: 100vh; padding: 24px 16px; }
+        .app { max-width: 900px; margin: 0 auto; background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden; border: 1px solid #e5e7eb; }
+        .header { background: #2563eb; color: white; padding: 24px; }
+        .header h1 { font-size: 1.4rem; font-weight: 700; }
+        .header p { font-size: 0.85rem; color: #bfdbfe; margin-top: 4px; }
+        .body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+        
+        .row-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .row-slider { background: #f8fafc; padding: 12px 16px; border-radius: 12px; border: 1px solid #e2e8f0; }
+        @media(max-width:600px){ .row-inputs { grid-template-columns: 1fr; } }
+        
+        label.field-label { display: block; font-size: 0.85rem; font-weight: 600; color: #374151; margin-bottom: 6px; }
+        input[type=text], input[type=number] { width: 100%; padding: 10px 14px; border: 1.5px solid #d1d5db; border-radius: 8px; outline: none; transition: border-color .2s; }
+        input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+        
+        .slider-flex { display: flex; align-items: center; gap: 12px; }
+        input[type=range] { flex: 1; cursor: pointer; }
+
+        .btn-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 20px; }
+        .btn { padding: 10px 20px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; border: none; cursor: pointer; transition: background .15s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .btn-blue { background: #2563eb; color: white; }
+        .btn-green { background: #059669; color: white; }
+        .btn-purple { background: #9333ea; color: white; }
+        .btn-indigo { background: #4f46e5; color: white; }
+        .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+        
+        .status-box { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px; padding: 12px 16px; }
+        .status-box p { font-size: 0.88rem; color: #0369a1; }
+        .progress-wrap { margin-top: 8px; background: #e0f2fe; border-radius: 99px; height: 6px; overflow: hidden; }
+        .progress-bar { height: 100%; background: #0ea5e9; transition: width .3s; }
+        
+        /* Checklist */
+        .checklist-box { border: 1.5px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
+        .checklist-header { background: #f9fafb; border-bottom: 1px solid #e5e7eb; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+        .checklist-range { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 10px 14px; display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+        .checklist-range input { width: 60px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
+        .checklist-body { max-height: 250px; overflow-y: auto; }
+        .checklist-item { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
+        .checklist-item:hover { background: #f8fafc; }
+        
+        /* Preview Section */
+        .preview-section { margin-top: 20px; border-top: 2px solid #e5e7eb; padding-top: 20px; }
+        .preview-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 10px; color: #374151; }
+        .preview-container { display: flex; flex-direction: column; gap: 8px; max-height: 500px; overflow-y: auto; padding: 4px; background: #f1f5f9; border-radius: 12px; border: 1px solid #e2e8f0; }
+        .preview-item { background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; transition: box-shadow 0.2s; }
+        .preview-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .preview-summary { padding: 10px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+        .preview-header { display: flex; justify-content: space-between; align-items: center; }
+        .preview-header span { font-weight: 600; color: #2563eb; font-size: 0.9rem; }
+        .preview-snippet { font-size: 0.8rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 4px; }
+        .preview-tag { font-size: 0.65rem; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; color: #94a3b8; font-family: monospace; }
+        
+        /* 避免原始碼太長導致撐爆畫面，使用預約高度 */
+        .preview-content { padding: 12px; background: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.75rem; white-space: pre-wrap; word-break: break-all; display: none; border-top: 1px solid #333; max-height: 300px; overflow-y: auto; }
+        .preview-item.open .preview-content { display: block; }
+        .preview-item.open .preview-snippet { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="app">
+    <div class="header">
+        <h1>WOL 網頁內容提取工具</h1>
+        <p>優化版：修正標題換行 + 平行提取控制 + 穩定預覽系統</p>
+    </div>
+    <div class="body">
+        <div class="row-inputs">
+            <div>
+                <label class="field-label">目標目錄網址</label>
+                <input type="text" id="targetUrl" placeholder="貼上 WOL 目錄網址...">
+            </div>
+            <div>
+                <label class="field-label">自訂檔案名稱</label>
+                <input type="text" id="fileTitle" value="WOL_提取內容">
+            </div>
+        </div>
+
+        <!-- 平行處理滑桿 -->
+        <div class="row-slider">
+            <label class="field-label">同時提取數量 (平行處理): <span id="concurrencyVal" style="color:#2563eb">3</span></label>
+            <div class="slider-flex">
+                <span style="font-size:0.75rem">1 (穩定)</span>
+                <input type="range" id="concurrencySlider" min="1" max="10" value="3" oninput="document.getElementById('concurrencyVal').textContent=this.value">
+                <span style="font-size:0.75rem">10 (極速)</span>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-blue" onclick="fetchLinks()">1. 獲取連結</button>
+            <button class="btn btn-green" id="btnExtract" onclick="extractContent()" disabled>2. 開始提取</button>
+            <div style="flex:1"></div>
+            <button class="btn btn-purple" id="btnMd" onclick="downloadMd()" disabled>下載 MD</button>
+            <button class="btn btn-indigo" id="btnHtml" onclick="downloadHtml()" disabled>下載 HTML</button>
+        </div>
+
+        <div class="status-box">
+            <p id="statusText">等待操作...</p>
+            <div class="progress-wrap" id="progressWrap" style="display:none">
+                <div class="progress-bar" id="progressBar" style="width:0%"></div>
+            </div>
+        </div>
+
+        <!-- 連結勾選清單 -->
+        <div class="checklist-box" id="checklistBox" style="display:none">
+            <div class="checklist-header">
+                <label style="cursor:pointer; font-weight:600;"><input type="checkbox" id="checkAll" onchange="toggleAll(this)"> 全選</label>
+                <span style="font-size:0.85rem">已選 <b id="checkedCount" style="color:#2563eb">0</b> / <span id="totalCount">0</span></span>
+                <input type="text" id="filterInput" class="btn-sm" style="border:1px solid #ddd; border-radius:4px" placeholder="搜尋標題..." oninput="renderChecklist()">
+            </div>
+            <div class="checklist-range">
+                <span>編號：</span>
+                <input type="number" id="rangeFrom" value="1"> 
+                <span>至</span>
+                <input type="number" id="rangeTo">
+                <button class="btn btn-sm btn-blue" onclick="applyRange(true)">選取</button>
+                <button class="btn btn-sm" onclick="applyRange(false)">取消</button>
+            </div>
+            <div class="checklist-body" id="checklistBody"></div>
+        </div>
+
+        <!-- 預覽區域 (穩定版) -->
+        <div id="previewArea" class="preview-section" style="display:none">
+            <div class="preview-title">📑 提取結果摘要 (點擊展開 HTML 源碼)</div>
+            <div class="preview-container" id="previewContainer"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const CORS_PROXY = 'https://corsproxy.io/?';
+const BASE_WOL_URL = 'https://wol.jw.org';
+let allLinks = [];
+let checkedUrls = new Set();
+let results = [];
+
+function setStatus(msg) { document.getElementById('statusText').textContent = msg; }
+function setProgress(pct) {
+    const wrap = document.getElementById('progressWrap');
+    wrap.style.display = pct === null ? 'none' : 'block';
+    document.getElementById('progressBar').style.width = (pct || 0) + '%';
+}
+
+function cleanText(text) {
+    return text ? text.replace(/\s+/g, ' ').trim() : '';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function renderChecklist() {
+    const filter = document.getElementById('filterInput').value.toLowerCase();
+    const body = document.getElementById('checklistBody');
+    body.innerHTML = allLinks
+        .filter(l => l.title.toLowerCase().includes(filter))
+        .map((l) => {
+            const idx = allLinks.indexOf(l) + 1;
+            return `<label class="checklist-item">
+                <input type="checkbox" ${checkedUrls.has(l.url) ? 'checked' : ''} onchange="toggleOne('${l.url}', this.checked)">
+                <span style="font-size:0.75rem; color:#94a3b8; width:25px; text-align:right;">${idx}</span>
+                <span>${l.title}</span>
+            </label>`;
+        }).join('');
+    updateCount();
+}
+
+function updateCount() {
+    document.getElementById('checkedCount').textContent = checkedUrls.size;
+    document.getElementById('btnExtract').disabled = checkedUrls.size === 0;
+}
+
+function toggleOne(url, isChecked) {
+    if (isChecked) checkedUrls.add(url); else checkedUrls.delete(url);
+    updateCount();
+}
+
+function toggleAll(cb) {
+    if (cb.checked) allLinks.forEach(l => checkedUrls.add(l.url)); else checkedUrls.clear();
+    renderChecklist();
+}
+
+function applyRange(select) {
+    const from = parseInt(document.getElementById('rangeFrom').value) || 1;
+    const to = parseInt(document.getElementById('rangeTo').value) || allLinks.length;
+    const start = Math.min(from, to) - 1;
+    const end = Math.max(from, to);
+    allLinks.slice(start, end).forEach(l => {
+        if (select) checkedUrls.add(l.url); else checkedUrls.delete(l.url);
+    });
+    renderChecklist();
+}
+
+async function fetchLinks() {
+    const url = document.getElementById('targetUrl').value.trim();
+    if (!url) return;
+    setStatus('正在獲取連結清單...');
+    try {
+        const res = await fetch(CORS_PROXY + encodeURIComponent(url));
+        const html = await res.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        allLinks = Array.from(doc.querySelectorAll('a'))
+            .filter(a => a.getAttribute('href')?.includes('/wol/d/r24/lp-ch/'))
+            .map(a => ({ 
+                title: cleanText(a.textContent), 
+                url: new URL(a.getAttribute('href'), BASE_WOL_URL).href 
+            }));
+        
+        checkedUrls.clear();
+        allLinks.forEach(l => checkedUrls.add(l.url));
+        document.getElementById('totalCount').textContent = allLinks.length;
+        document.getElementById('rangeTo').value = allLinks.length;
+        document.getElementById('checklistBox').style.display = 'block';
+        renderChecklist();
+        setStatus(`已讀取 ${allLinks.length} 條連結。`);
+    } catch(e) { setStatus('獲取失敗: ' + e.message); }
+}
+
+async function extractContent() {
+    const targets = allLinks.filter(l => checkedUrls.has(l.url));
+    const concurrency = parseInt(document.getElementById('concurrencySlider').value);
+    results = new Array(targets.length).fill(null); // 固定長度以利排序
+    
+    const previewContainer = document.getElementById('previewContainer');
+    previewContainer.innerHTML = '';
+    document.getElementById('previewArea').style.display = 'block';
+
+    // 建立佔位元素確保順序
+    targets.forEach((_, idx) => {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'preview-item';
+        placeholder.id = `preview-idx-${idx}`;
+        placeholder.innerHTML = `<div class="preview-summary"><div class="preview-header"><span>${idx + 1}. 等待中...</span></div></div>`;
+        previewContainer.appendChild(placeholder);
+    });
+
+    let activeIndex = 0;
+    const total = targets.length;
+
+    async function worker() {
+        while (activeIndex < total) {
+            const currentIdx = activeIndex++;
+            const item = targets[currentIdx];
+            const placeholder = document.getElementById(`preview-idx-${currentIdx}`);
+            
+            setStatus(`正在提取 (${currentIdx + 1}/${total}): ${item.title}`);
+            setProgress(Math.round(((currentIdx + 1) / total) * 100));
+
+            try {
+                const res = await fetch(CORS_PROXY + encodeURIComponent(item.url));
+                const html = await res.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const article = doc.querySelector('article');
+                
+                if (article) {
+                    article.querySelectorAll('script, style, .hidden, nav, footer').forEach(n => n.remove());
+                    article.querySelectorAll('img').forEach(img => {
+                        let src = img.getAttribute('src');
+                        if (src && src.startsWith('/')) img.setAttribute('src', BASE_WOL_URL + src);
+                    });
+
+                    const cleanHtml = article.innerHTML.trim();
+                    const snippet = article.textContent.trim().substring(0, 150).replace(/\s+/g, ' ') + '...';
+                    
+                    results[currentIdx] = { title: item.title, url: item.url, html: cleanHtml };
+                    
+                    // 更新 UI 佔位符
+                    placeholder.innerHTML = `
+                        <div class="preview-summary" onclick="this.parentElement.classList.toggle('open')">
+                            <div class="preview-header">
+                                <span>${currentIdx + 1}. ${item.title}</span>
+                                <span class="preview-tag">HTML 源碼</span>
+                            </div>
+                            <div class="preview-snippet">${snippet}</div>
+                        </div>
+                        <div class="preview-content">${escapeHtml(cleanHtml)}</div>
+                    `;
+                }
+            } catch(e) {
+                placeholder.innerHTML = `<div class="preview-summary" style="color:red"><span>${currentIdx + 1}. 提取失敗</span></div>`;
+            }
+        }
+    }
+
+    const workers = [];
+    for (let i = 0; i < Math.min(concurrency, total); i++) {
+        workers.push(worker());
+    }
+    await Promise.all(workers);
+
+    results = results.filter(r => r !== null);
+    setStatus('提取完成！');
+    setProgress(null);
+    document.getElementById('btnMd').disabled = false;
+    document.getElementById('btnHtml').disabled = false;
+}
+
+function convertToMarkdown(htmlString) {
+    const temp = document.createElement('div');
+    temp.innerHTML = htmlString;
+
+    function walk(node) {
+        if (node.nodeType === 3) return node.nodeValue.replace(/\s+/g, ' ');
+        let children = Array.from(node.childNodes).map(walk).join('').trim();
+
+        switch (node.nodeName) {
+            case 'H1': return `\n# ${children}\n\n`;
+            case 'H2': return `\n## ${children}\n\n`;
+            case 'H3': return `\n### ${children}\n\n`;
+            case 'P':  return `\n${children}\n\n`;
+            case 'BR': return `\n`;
+            case 'STRONG': case 'B': return `**${children}**`;
+            case 'EM': case 'I': return `*${children}*`;
+            case 'LI': return `- ${children}\n`;
+            case 'UL': return `\n${children}\n`;
+            case 'IMG': 
+                const src = node.getAttribute('src');
+                const alt = node.getAttribute('alt') || '圖片';
+                return src ? `![${alt}](${src})` : "";
+            case 'A': 
+                const href = node.getAttribute('href');
+                return href ? `[${children}](${href})` : children;
+            default: return children;
+        }
+    }
+
+    return walk(temp)
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\n\s*\n\s*\n/g, '\n\n')
+        .trim();
+}
+
+function downloadMd() {
+    const title = document.getElementById('fileTitle').value;
+    let md = `# ${title}\n\n## 目錄\n`;
+    results.forEach((r, i) => { 
+        md += `${i + 1}. [${r.title}](#article-${i + 1})\n`; 
+    });
+    md += `\n---\n\n`;
+    results.forEach((r, i) => {
+        md += `<div id="article-${i + 1}"></div>\n\n`;
+        md += `## ${r.title}\n\n`;
+        md += `> 來源: [${r.url}](${r.url})\n\n`;
+        // 確保標題與內容之間有換行
+        md += convertToMarkdown(r.html) + `\n\n---\n\n`;
+    });
+    saveFile('\uFEFF' + md, title + '.md', 'text/markdown');
+}
+
+function downloadHtml() {
+    const title = document.getElementById('fileTitle').value;
+    let html = `<html><head><meta charset="utf-8"><title>${title}</title><style>body{max-width:850px;margin:2em auto;line-height:1.7;font-family:sans-serif;padding:20px;background:#f9fafb;color:#333;} .art{background:white;padding:30px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.05);margin-bottom:3em;} h2{color:#2563eb;margin-top:0;border-bottom:1px solid #eee;padding-bottom:10px;} img{max-width:100%;height:auto;border-radius:8px;margin:15px 0;} a{color:#2563eb;text-decoration:none;} a:hover{text-decoration:underline;}</style></head><body><h1>${title}</h1>`;
+    results.forEach(r => { html += `<div class="art"><h2>${r.title}</h2><p style="font-size:0.85em;color:#666;">來源: <a href="${r.url}">${r.url}</a></p>${r.html}</div>`; });
+    html += '</body></html>';
+    saveFile('\uFEFF' + html, title + '.html', 'text/html');
+}
+
+function saveFile(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+}
+</script>
+</body>
+</html>
