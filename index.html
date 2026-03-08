@@ -85,6 +85,10 @@
         .step-desc strong { color: #374151; }
         .warn-box { background: #fef9c3; border: 1px solid #fde047; border-radius: 10px; padding: 12px 16px; font-size: 0.84rem; color: #713f12; margin-top: 4px; }
         .modal-footer { padding: 0 24px 24px; text-align: right; }
+        .btn-outline-white { background: rgba(255,255,255,0.15); color: white; border: 1.5px solid rgba(255,255,255,0.5); }
+        .btn-outline-white:hover { background: rgba(255,255,255,0.28); border-color: white; }
+        .tutorial-video-wrap { margin: 0 0 20px 0; border-radius: 10px; overflow: hidden; background: #000; line-height: 0; }
+        .tutorial-video-wrap video { width: 100%; max-height: 320px; object-fit: contain; display: block; }
     </style>
 </head>
 <body>
@@ -100,6 +104,12 @@
             <button class="modal-close" onclick="closeGuide()">✕</button>
         </div>
         <div class="modal-body">
+            <div class="tutorial-video-wrap">
+                <video autoplay loop muted playsinline controls>
+                    <source src="https://raw.githubusercontent.com/timothy920611/take-article/cf21f2bea0488a621dbbff78b1a400d0a4707655/intro.mov" type="video/mp4">
+                    您的瀏覽器不支援影片播放。
+                </video>
+            </div>
             <div class="step">
                 <div class="step-title"><div class="step-num">1</div><span>輸入目標網址</span></div>
                 <div class="step-desc">在「目標目錄網址」欄位貼上 WOL 的目錄頁網址，例如某個出版物的索引頁。</div>
@@ -134,10 +144,14 @@
 <div class="app">
     <div class="header">
         <img src="take_article_logo.png" alt="logo">
-        <div>
+        <div style="flex:1;">
             <h1>網頁內容提取工具 (WOL Scraper)</h1>
             <p>支援提取純文字與完整 HTML 排版格式，支援勾選連結、相對連結改為絕對連結。</p>
         </div>
+        <button class="btn btn-outline-white" onclick="openGuide()" style="flex-shrink:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+            使用教學
+        </button>
     </div>
     <div class="body">
         <!-- 輸入區 -->
@@ -221,6 +235,9 @@ let isProcessing = false;
 
 function closeGuide() {
     document.getElementById('guideModal').classList.add('hidden');
+}
+function openGuide() {
+    document.getElementById('guideModal').classList.remove('hidden');
 }
 
 function setStatus(msg) {
